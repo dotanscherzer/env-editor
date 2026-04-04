@@ -1,0 +1,16 @@
+{
+  "name": "env-editor",
+  "version": "1.0.0",
+  "description": "Edit .env files inside Docker containers through a browser UI",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "express": "^4.18.3",
+    "tar-stream": "^3.1.7",
+    "dotenv": "^16.4.5"
+  }
+}

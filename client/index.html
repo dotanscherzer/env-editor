@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EnvEditor</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a; --text: #e1e4ed;
+  --muted: #8b8fa3; --accent: #6c8cff; --accent-hover: #5a7aef;
+  --green: #4ade80; --red: #f87171; --yellow: #facc15;
+  --radius: 8px; --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+button { cursor: pointer; font-family: var(--font); border: none; border-radius: var(--radius); }
+input, textarea { font-family: var(--mono); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; outline: none; }
+input:focus, textarea:focus { border-color: var(--accent); }
+
+/* Layout */
+.app { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+.sidebar-header h1 { font-size: 16px; font-weight: 600; color: var(--accent); }
+.container-list { flex: 1; overflow-y: auto; padding: 8px; }
+.container-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius); cursor: pointer; margin-bottom: 2px; transition: background 0.15s; }
+.container-item:hover { background: rgba(108,140,255,0.08); }
+.container-item.selected { background: rgba(108,140,255,0.15); }
+.container-item.dimmed { opacity: 0.4; cursor: default; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.running { background: var(--green); }
+.status-dot.other { background: var(--muted); }
+.container-name { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.var-count { font-size: 11px; color: var(--muted); background: var(--bg); padding: 2px 6px; border-radius: 10px; }
+
+/* Main panel */
+.main { display: flex; flex-direction: column; overflow: hidden; }
+.editor-header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.editor-title { font-size: 15px; font-weight: 600; flex: 1; }
+.editor-path { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.btn { padding: 6px 14px; font-size: 13px; font-weight: 500; border-radius: var(--radius); transition: background 0.15s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary { background: var(--border); color: var(--text); }
+.btn-secondary:hover { background: #363a4a; }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* Mode toggle */
+.mode-toggle { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin: 0 20px; }
+.mode-btn { padding: 6px 16px; font-size: 12px; background: transparent; color: var(--muted); border: none; border-radius: 0; }
+.mode-btn.active { background: var(--accent); color: #fff; }
+
+/* Content area */
+.content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+/* Table view */
+.env-table { width: 100%; border-collapse: separate; border-spacing: 0 4px; }
+.env-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--muted); padding: 4px 8px; font-weight: 500; }
+.env-row td { padding: 4px; }
+.env-key { font-family: var(--mono); font-size: 13px; padding: 6px 10px; background: var(--bg); border-radius: var(--radius); min-width: 180px; }
+.env-key input { width: 100%; background: transparent; border: none; color: var(--text); font-family: var(--mono); font-size: 13px; padding: 0; }
+.env-key input:focus { outline: none; }
+.env-val { width: 100%; }
+.env-val input { width: 100%; font-size: 13px; }
+.val-wrapper { display: flex; align-items: center; gap: 4px; }
+.val-wrapper input { flex: 1; }
+.btn-show { font-size: 11px; color: var(--muted); background: none; padding: 2px 6px; white-space: nowrap; }
+.btn-show:hover { color: var(--text); }
+.btn-del { font-size: 16px; color: var(--muted); background: none; padding: 2px 8px; line-height: 1; }
+.btn-del:hover { color: var(--red); }
+
+/* Raw view */
+.raw-editor { width: 100%; height: 100%; min-height: 400px; font-family: var(--mono); font-size: 13px; line-height: 1.6; padding: 12px; resize: none; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* Save banner */
+.save-banner { display: none; align-items: center; justify-content: center; gap: 12px; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--border); }
+.save-banner.visible { display: flex; }
+
+/* Flash message */
+.flash { position: fixed; top: 16px; right: 16px; padding: 10px 20px; border-radius: var(--radius); font-size: 13px; font-weight: 500; z-index: 1000; animation: fadeInOut 2s ease; pointer-events: none; }
+.flash.success { background: #166534; color: #4ade80; }
+.flash.error { background: #7f1d1d; color: #f87171; }
+@keyframes fadeInOut { 0% { opacity: 0; transform: translateY(-10px); } 15% { opacity: 1; transform: translateY(0); } 85% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Empty / login states */
+.empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 15px; }
+.login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.login-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px; width: 340px; text-align: center; }
+.login-box h2 { font-size: 18px; margin-bottom: 8px; }
+.login-box p { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+.login-box input { width: 100%; margin-bottom: 12px; padding: 10px 14px; font-size: 14px; }
+.login-box .btn { width: 100%; padding: 10px; font-size: 14px; }
+.login-error { color: var(--red); font-size: 12px; margin-bottom: 8px; display: none; }
+
+/* Loading spinner */
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Responsive */
+@media (max-width: 700px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 50px; overflow: visible; position: relative; z-index: 10; }
+  .sidebar.expanded { max-height: none; }
+  .sidebar-header { display: flex; align-items: center; justify-content: space-between; }
+  .sidebar-toggle { display: block; }
+  .container-list { position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border-bottom: 1px solid var(--border); display: none; max-height: 300px; overflow-y: auto; }
+  .sidebar.expanded .container-list { display: block; }
+}
+@media (min-width: 701px) {
+  .sidebar-toggle { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div id="loginOverlay" class="login-overlay" style="display:none">
+  <div class="login-box">
+    <h2>EnvEditor</h2>
+    <p>Enter your API token to connect</p>
+    <div id="loginError" class="login-error">Invalid token</div>
+    <input type="password" id="tokenInput" placeholder="Bearer token" autofocus>
+    <button class="btn btn-primary" id="loginBtn">Connect</button>
+  </div>
+</div>
+
+<div class="app">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h1>EnvEditor</h1>
+      <button class="btn btn-sm btn-secondary sidebar-toggle" id="sidebarToggle">&#9776;</button>
+    </div>
+    <div class="container-list" id="containerList">
+      <div class="empty-state" style="font-size:12px;padding:20px;">Loading...</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="editor-header" id="editorHeader" style="display:none">
+      <div>
+        <div class="editor-title" id="editorTitle"></div>
+        <div class="editor-path" id="editorPath"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-left:auto;">
+        <button class="btn btn-sm btn-secondary" id="addVarBtn">+ Add var</button>
+        <button class="btn btn-sm btn-primary" id="saveBtn">Save</button>
+      </div>
+    </div>
+    <div class="mode-toggle" id="modeToggle" style="display:none;margin-top:12px;margin-bottom:4px;">
+      <button class="mode-btn active" data-mode="table">Table view</button>
+      <button class="mode-btn" data-mode="raw">Raw text</button>
+    </div>
+    <div class="content" id="content">
+      <div class="empty-state">Select a container</div>
+    </div>
+    <div class="save-banner" id="saveBanner">
+      <span>Unsaved changes</span>
+      <button class="btn btn-sm btn-primary" id="saveOnlyBtn">Save only</button>
+      <button class="btn btn-sm btn-danger" id="saveRestartBtn">Save + restart</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = {
+  containers: [],
+  selected: null,
+  selectedName: '',
+  envPath: '',
+  vars: [],
+  raw: '',
+  dirty: false,
+  mode: 'table',
+  revealed: new Set(),
+};
+
+const SENSITIVE = /PASSWORD|SECRET|TOKEN|KEY/i;
+
+// --- API helpers ---
+function getToken() { return sessionStorage.getItem('editorToken'); }
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  if (res.status === 401) {
+    sessionStorage.removeItem('editorToken');
+    showLogin();
+    throw new Error('Unauthorized');
+  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// --- Flash messages ---
+function flash(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = 'flash ' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+// --- Login ---
+function showLogin() {
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('tokenInput').value = '';
+  document.getElementById('tokenInput').focus();
+}
+
+async function attemptLogin() {
+  const token = document.getElementById('tokenInput').value.trim();
+  if (!token) return;
+  sessionStorage.setItem('editorToken', token);
+  document.getElementById('loginError').style.display = 'none';
+  try {
+    await api('/api/containers');
+    document.getElementById('loginOverlay').style.display = 'none';
+    loadContainers();
+  } catch {
+    document.getElementById('loginError').style.display = 'block';
+    sessionStorage.removeItem('editorToken');
+  }
+}
+
+document.getElementById('loginBtn').addEventListener('click', attemptLogin);
+document.getElementById('tokenInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptLogin(); });
+
+// --- Containers ---
+async function loadContainers() {
+  try {
+    state.containers = await api('/api/containers');
+    renderContainerList();
+  } catch (err) {
+    document.getElementById('containerList').innerHTML = '<div class="empty-state" style="font-size:12px;padding:20px;color:var(--red);">' + err.message + '</div>';
+  }
+}
+
+function renderContainerList() {
+  const list = document.getElementById('containerList');
+  if (!state.containers.length) {
+    list.innerHTML = '<div class="empty-state" style="font-size:12px;padding:20px;">No running containers</div>';
+    return;
+  }
+  list.innerHTML = state.containers.map((c) => {
+    const dimmed = !c.envPath ? ' dimmed' : '';
+    const selected = c.id === state.selected ? ' selected' : '';
+    const dotClass = c.status === 'running' ? 'running' : 'other';
+    return '<div class="container-item' + dimmed + selected + '" data-id="' + c.id + '" data-name="' + c.name + '" data-path="' + (c.envPath || '') + '">'
+      + '<span class="status-dot ' + dotClass + '"></span>'
+      + '<span class="container-name">' + c.name + '</span>'
+      + (c.varCount ? '<span class="var-count">' + c.varCount + '</span>' : '')
+      + '</div>';
+  }).join('');
+
+  list.querySelectorAll('.container-item:not(.dimmed)').forEach((el) => {
+    el.addEventListener('click', () => {
+      state.selected = el.dataset.id;
+      state.selectedName = el.dataset.name;
+      state.envPath = el.dataset.path;
+      renderContainerList();
+      loadEnv(el.dataset.id);
+      // close mobile sidebar
+      document.getElementById('sidebar').classList.remove('expanded');
+    });
+  });
+}
+
+// --- Load env ---
+async function loadEnv(id) {
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  document.getElementById('editorHeader').style.display = 'flex';
+  document.getElementById('modeToggle').style.display = 'flex';
+  document.getElementById('editorTitle').textContent = state.selectedName;
+  document.getElementById('editorPath').textContent = state.envPath;
+  document.title = 'EnvEditor \u2014 ' + state.selectedName;
+
+  try {
+    const data = await api('/api/containers/' + id + '/env');
+    state.vars = data.vars;
+    state.raw = data.raw;
+    state.dirty = false;
+    state.revealed = new Set();
+    updateBanner();
+    renderView();
+  } catch (err) {
+    content.innerHTML = '<div class="empty-state" style="color:var(--red);">' + err.message + '</div>';
+  }
+}
+
+// --- Render views ---
+function renderView() {
+  if (state.mode === 'table') renderTable();
+  else renderRaw();
+}
+
+function renderTable() {
+  const content = document.getElementById('content');
+  if (!state.vars.length) {
+    content.innerHTML = '<div class="empty-state">No variables found</div>';
+    return;
+  }
+  let html = '<table class="env-table"><thead><tr><th>Key</th><th>Value</th><th></th></tr></thead><tbody>';
+  state.vars.forEach((v, i) => {
+    const isSensitive = SENSITIVE.test(v.key);
+    const isRevealed = state.revealed.has(i);
+    const inputType = (isSensitive && !isRevealed) ? 'password' : 'text';
+    html += '<tr class="env-row">'
+      + '<td class="env-key"><input value="' + escHtml(v.key) + '" data-idx="' + i + '" data-field="key"></td>'
+      + '<td class="env-val"><div class="val-wrapper">'
+      + '<input type="' + inputType + '" value="' + escHtml(v.value) + '" data-idx="' + i + '" data-field="value">'
+      + (isSensitive ? '<button class="btn-show" data-idx="' + i + '">' + (isRevealed ? 'hide' : 'show') + '</button>' : '')
+      + '</div></td>'
+      + '<td><button class="btn-del" data-idx="' + i + '">&times;</button></td>'
+      + '</tr>';
+  });
+  html += '</tbody></table>';
+  content.innerHTML = html;
+
+  // Event delegation
+  content.addEventListener('input', handleTableInput);
+  content.addEventListener('click', handleTableClick);
+}
+
+function handleTableInput(e) {
+  const input = e.target;
+  if (!input.dataset || !input.dataset.idx) return;
+  const idx = parseInt(input.dataset.idx);
+  const field = input.dataset.field;
+  if (state.vars[idx]) {
+    state.vars[idx][field] = input.value;
+    setDirty();
+  }
+}
+
+function handleTableClick(e) {
+  const btn = e.target;
+  if (btn.classList.contains('btn-del')) {
+    const idx = parseInt(btn.dataset.idx);
+    state.vars.splice(idx, 1);
+    setDirty();
+    renderTable();
+  } else if (btn.classList.contains('btn-show')) {
+    const idx = parseInt(btn.dataset.idx);
+    if (state.revealed.has(idx)) state.revealed.delete(idx);
+    else state.revealed.add(idx);
+    renderTable();
+  }
+}
+
+function renderRaw() {
+  const content = document.getElementById('content');
+  // Sync vars to raw before showing
+  if (!state.dirty) {
+    state.raw = state.vars.map((v) => v.key + '=' + v.value).join('\n') + '\n';
+  }
+  content.innerHTML = '<textarea class="raw-editor" id="rawEditor">' + escHtml(state.raw) + '</textarea>';
+  document.getElementById('rawEditor').addEventListener('input', (e) => {
+    state.raw = e.target.value;
+    setDirty();
+  });
+}
+
+function parseRawToVars(raw) {
+  const vars = [];
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex === -1) continue;
+    vars.push({ key: trimmed.substring(0, eqIndex), value: trimmed.substring(eqIndex + 1) });
+  }
+  return vars;
+}
+
+// --- Dirty state ---
+function setDirty() {
+  state.dirty = true;
+  updateBanner();
+}
+
+function updateBanner() {
+  document.getElementById('saveBanner').classList.toggle('visible', state.dirty);
+}
+
+// --- Save ---
+async function saveEnv() {
+  if (state.mode === 'raw') {
+    state.vars = parseRawToVars(state.raw);
+  }
+  try {
+    document.getElementById('saveBtn').disabled = true;
+    await api('/api/containers/' + state.selected + '/env', {
+      method: 'PUT',
+      body: JSON.stringify({ vars: state.vars }),
+    });
+    state.dirty = false;
+    state.raw = state.vars.map((v) => v.key + '=' + v.value).join('\n') + '\n';
+    updateBanner();
+    flash('Saved \u2713');
+  } catch (err) {
+    flash(err.message, 'error');
+  } finally {
+    document.getElementById('saveBtn').disabled = false;
+  }
+}
+
+async function restartCont() {
+  const btn = document.getElementById('saveRestartBtn');
+  const orig = btn.textContent;
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  try {
+    await api('/api/containers/' + state.selected + '/restart', { method: 'POST' });
+    flash('Restarted \u2713');
+  } catch (err) {
+    flash(err.message, 'error');
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+// --- Event listeners ---
+document.getElementById('saveBtn').addEventListener('click', saveEnv);
+document.getElementById('saveOnlyBtn').addEventListener('click', saveEnv);
+document.getElementById('saveRestartBtn').addEventListener('click', async () => { await saveEnv(); await restartCont(); });
+document.getElementById('addVarBtn').addEventListener('click', () => {
+  state.vars.push({ key: '', value: '' });
+  setDirty();
+  renderTable();
+  // Focus last key input
+  const inputs = document.querySelectorAll('.env-key input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+});
+
+// Mode toggle
+document.getElementById('modeToggle').addEventListener('click', (e) => {
+  if (!e.target.classList.contains('mode-btn')) return;
+  const mode = e.target.dataset.mode;
+  if (mode === state.mode) return;
+  // Sync before switching
+  if (state.mode === 'raw' && mode === 'table') {
+    state.vars = parseRawToVars(state.raw);
+  } else if (state.mode === 'table' && mode === 'raw') {
+    state.raw = state.vars.map((v) => v.key + '=' + v.value).join('\n') + '\n';
+  }
+  state.mode = mode;
+  document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  renderView();
+});
+
+// Ctrl+S / Cmd+S
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    if (state.dirty && state.selected) saveEnv();
+  }
+});
+
+// Mobile sidebar toggle
+document.getElementById('sidebarToggle').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('expanded');
+});
+
+// Util
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// --- Init ---
+if (getToken()) {
+  loadContainers();
+} else {
+  showLogin();
+}
+</script>
+</body>
+</html>
