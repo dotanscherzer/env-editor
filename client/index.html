@@ -396,7 +396,7 @@ async function saveEnv() {
     document.getElementById('saveBtn').disabled = true;
     await api('/api/containers/' + state.selected + '/env', {
       method: 'PUT',
-      body: JSON.stringify({ vars: state.vars }),
+      body: JSON.stringify({ vars: state.vars, envPath: state.envPath }),
     });
     state.dirty = false;
     state.raw = state.vars.map((v) => v.key + '=' + v.value).join('\n') + '\n';
