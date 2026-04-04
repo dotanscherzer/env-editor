@@ -42,5 +42,5 @@ app.use('/api/containers', require('./routes/env'));
 // Listen
 const port = process.env.PORT || 4200;
 app.listen(port, () => {
-  console.log(`EnvEditor listening on port ${port}`);
+  console.log(`EnvEditor v1.0.0 listening on port ${port}`);
 });
