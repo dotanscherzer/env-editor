@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+
+jobs:
+  test:
+    name: server — unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm install --no-audit --no-fund
+      - name: Run tests
+        run: npm test -- --coverage
+
+  test-changed-gate:
+    name: New code = new tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check test changes
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: bash scripts/check-tests-changed.sh
